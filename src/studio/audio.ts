@@ -187,6 +187,9 @@ export class EnsembleAudio {
 
   private async prepare(): Promise<void> {
     if (!this.ctx) {
+      // On iOS, an ambient session can be silent even while Web Audio is running.
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = "playback";
       // Eight physical models share one audio thread. A voice-rate context leaves
       // room for all of them while keeping the standalone instruments unchanged.
       this.ctx = new AudioContext({ latencyHint: "playback", sampleRate: 16000 });
@@ -272,8 +275,9 @@ export class EnsembleAudio {
   get error(): Error | undefined { return this.failure; }
 
   unlock(): void {
-    // A gesture can release the resume already pending from page load.
-    if (this.ctx?.state === "suspended") void this.ctx.resume().catch(() => {});
+    // WebKit can report "interrupted" while the page-load resume is pending.
+    const ctx = this.ctx;
+    if (ctx && ctx.state !== "running" && ctx.state !== "closed") void ctx.resume().catch(() => {});
   }
 
   setStageVisible(visible: boolean): void {
