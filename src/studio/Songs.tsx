@@ -96,7 +96,9 @@ function NoteEditor({ note, bars, onApply, onDelete }: {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const beat = (Number(data.get("bar")) - 1) * 4 + Number(data.get("beat")) - 1;
-    setError(onApply({ ...note, beat, midi: Number(data.get("pitch")), duration: Number(data.get("duration")), lyric: String(data.get("lyric")).trim() }) ?? "");
+    const lyric = String(data.get("lyric")).trim();
+    const pronunciation = lyric === note.lyric ? note.pronunciation : undefined;
+    setError(onApply({ ...note, beat, midi: Number(data.get("pitch")), duration: Number(data.get("duration")), lyric, pronunciation }) ?? "");
   }
   return <form className="studio-note-form" onSubmit={submit}>
     <label>Syllable<input name="lyric" defaultValue={note.lyric} placeholder="ah" required maxLength={28} /></label>
@@ -159,7 +161,7 @@ export function Songs({ audio, active, stageControls, watch }: {
     saveDrafts({ ...drafts, [song.id]: { bpm, tracks: tracks.map((track, i) => i === head ? next : track) } });
   }
   function apply(note: Note): string | undefined {
-    if (!readSyllable(note.lyric)) return "Enter one singable syllable, such as “ah” or “light”. Split longer words across notes.";
+    if (!readSyllable(note.pronunciation ?? note.lyric)) return "Enter one singable syllable, such as “ah” or “light”. Split longer words across notes.";
     const end = note.beat + note.duration;
     if (end > song.bars * 4 + 0.00001) return "This note ends beyond the arrangement.";
     if (notes.some((n) => n.id !== note.id && note.beat < n.beat + n.duration - 0.00001 && end > n.beat + 0.00001)) {

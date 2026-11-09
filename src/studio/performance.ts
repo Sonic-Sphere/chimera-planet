@@ -1,21 +1,40 @@
+import { planUtterance, tokenizeIpa } from "../../vendor/chimera/src/wasm/engine.ts";
+import { HEADS } from "../heads.ts";
 import type { Note, Song } from "./songbook.ts";
+
+export const PREROLL = 0.2; // Chimera's beat player also starts its first acoustic hit after 200 ms.
 
 type Style = "lullaby" | "round" | "groove" | "chorale" | "ballad";
 type Cue = [beat: number, lead: number, choir: number, stretch?: number];
-type Line = { text: string; ipa: string; pitch: number; question?: boolean };
+type Line = { text: string; ipa: string; pitch: number; question?: boolean; pauseAfter?: number };
 type Direction = {
   style: Style;
   cues: Cue[];
   breaths: number[];
   entrances?: [head: number, beat: number][];
-  speech?: { seconds: number; lines: Line[] };
+  speech?: { seconds?: number; lines: Line[]; countIn?: Line[] };
 };
 
 // Cue positions are score beats. Stretch is seconds per beat relative to the written tempo.
 // Lead and choir dynamics scale the physical breath drive.
 const directions: Record<string, Direction> = {
-  lion: { style: "groove", cues: [[0, 0.98, 0.84], [8, 1.08, 0.93], [12, 1, 1.02], [16, 1.12, 1.10, 0.97], [28, 1.16, 1.16], [32, 0.96, 0.93, 1.13]],
-    breaths: [4, 8, 20, 24], entrances: [[1, 4], [5, 12], [6, 16], [7, 12]] },
+  lion: { style: "groove", cues: [[0, 0.98, 0.82], [32, 1.02, 0.95], [64, 1.07, 0.82], [96, 1, 1.02], [128, 1.08, 0.87], [160, 1, 1.09], [224, 1.07, 0.89], [256, 1.12, 1.03], [304, 0.94, 0.92], [320, 0.76, 0.75, 1.10]],
+    breaths: [16, 64, 80, 128, 144, 160, 176, 192, 208, 224, 240, 256, 272],
+    speech: {
+      lines: [
+        { text: "Hello, hello.", ipa: "həlˈoʊ həlˈoʊ", pitch: 169, pauseAfter: 1 },
+        { text: "This is a spatial vocal synth for Sonic Sphere.", ipa: "ðɪs ɪz ə spˈeɪʃəl vˈoʊkəl sˈɪnθ fɚ sˈɑnɪk sfˈɪɹ", pitch: 164 },
+        { text: "It places voices around you to sing as a chorus.", ipa: "ɪt plˈeɪsɪz vˈɔɪsɪz əɹˈaʊnd ju tə sˈɪŋ æz ə kˈɔɹəs", pitch: 156, pauseAfter: 1 },
+        { text: "Here's a spatial robot chorus of The Lion Sleeps Tonight.", ipa: "hˈɪɹz ə spˈeɪʃəl ɹˈoʊbɑt kˈɔɹəs əv ðə lˈaɪən slˈips tənˈaɪt", pitch: 162, pauseAfter: 2 },
+      ],
+      countIn: [
+        { text: "One", ipa: "wˈʌn", pitch: 153 },
+        { text: "Two", ipa: "tˈu", pitch: 158 },
+        { text: "Three", ipa: "θɹˈi", pitch: 164 },
+        { text: "Four", ipa: "fˈɔɹ", pitch: 170 },
+      ],
+    },
+  },
   twinkle: { style: "lullaby", cues: [[0, 0.84, 0.63], [6, 0.93, 0.74], [16, 0.94, 0.75], [22, 1.02, 0.92], [32, 0.87, 0.71], [46, 0.83, 0.65, 1.12], [48, 0.73, 0.61, 1.25]],
     breaths: [8, 16, 24, 32, 40], entrances: [[2, 4], [4, 16], [5, 8], [6, 16], [7, 8]] },
   row: { style: "round", cues: [[0, 0.97, 0.74], [8, 1.07, 0.89], [16, 1, 0.95], [28, 1.06, 0.92], [40, 0.88, 0.70, 1.15]],
@@ -66,12 +85,37 @@ const style = {
   ballad: { swing: 0, lift: 0.05, vibrato: 36, brightness: 0.23, breathiness: 0.19, scoop: 72 },
 } satisfies Record<Style, { swing: number; lift: number; vibrato: number; brightness: number; breathiness: number; scoop: number }>;
 
+function planSpeech(speech: NonNullable<Direction["speech"]>, bpm: number) {
+  function planLine(line: Line, t0: number, rate: number) {
+    const segments = tokenizeIpa(line.ipa);
+    const plan = planUtterance(segments, {
+      body: HEADS[0].body, t0, f0: line.pitch, rate, accent: 0.13,
+      intonation: line.question ? "question" : "statement",
+    });
+    return { text: line.text, segments, plan };
+  }
+
+  let at = PREROLL;
+  const lines = speech.lines.map((line) => {
+    const planned = planLine(line, at, 0.92);
+    at = planned.plan.end + (line.pauseAfter ?? 0.24);
+    return planned;
+  });
+  const seconds = speech.seconds ?? at - PREROLL;
+  const beatSeconds = 60 / bpm;
+  speech.countIn?.forEach((line, beat) => {
+    lines.push(planLine(line, PREROLL + seconds + beat * beatSeconds, Math.max(1.45, bpm / 70)));
+  });
+  return { lines, pitch: speech.lines[0].pitch, seconds: seconds + (speech.countIn?.length ?? 0) * beatSeconds };
+}
+
 export function songPerformance(song: Song, bpm: number, preset: boolean) {
   const direction = directions[song.id];
   const color = style[direction.style];
   const cues = direction.cues.map(([beat, lead, choir, stretch = 1]) => ({ beat, lead, choir, stretch }));
   const beatSeconds = 60 / bpm;
-  const speech = direction.speech;
+  const speech = direction.speech && planSpeech(direction.speech, bpm);
+  const introSeconds = speech?.seconds ?? 0;
   const entrances = new Map(preset ? direction.entrances : undefined);
   const canonOffsets = direction.style === "round" ? [0, 8, 0, 16, 0, 0, 24, 0] : undefined;
 
@@ -103,13 +147,13 @@ export function songPerformance(song: Song, bpm: number, preset: boolean) {
   }
 
   return {
-    color, speech, timeAt, melody,
+    color, speech, introSeconds, timeAt, melody,
     notes: (notes: Note[], head: number) => notes.filter((note) => note.beat >= (entrances.get(head) ?? 0)),
     noteTime(beat: number, head: number): number {
       // Breathe around a shared pulse. The bass stays on it and the choir enters a hair apart.
       const delay = [0.012, 0.023, 0, 0.029, 0.009, 0.033, 0.018, 0.027][head];
       const lift = color.swing * Math.sin(Math.PI * beat) ** 2;
-      return (speech?.seconds ?? 0) + timeAt(beat + lift) + delay;
+      return introSeconds + timeAt(beat + lift) + delay;
     },
     breathBefore(head: number, note: Note): boolean {
       if (!melody(head, note)) return false;
@@ -131,7 +175,7 @@ export function songPerformance(song: Song, bpm: number, preset: boolean) {
         tension: [0.55, 0.51, 0.45, 0.52, 0.49, 0.49, 0.51, 0.45][head],
         vibratoRate: [5.5, 5.8, 4.8, 5.9, 5.3, 5.2, 6.1, 4.9][head],
         drift: head === 0 ? 4 : 6,
-        f0: head === 0 && speech ? speech.lines[0].pitch : 110,
+        f0: head === 0 && speech ? speech.pitch : 110,
       };
     },
   };

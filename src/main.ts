@@ -10,7 +10,7 @@ app.innerHTML = `
     <div class="stage-view-tools" role="group" aria-label="View controls">
       <button type="button" class="chip" id="reset-view" disabled>Reset view</button>
       <button type="button" class="chip" id="slow-orbit" aria-pressed="false" disabled>Slow orbit</button>
-      <button type="button" class="chip" id="stage-words" aria-pressed="false" title="Show words and syllables at each mouth" disabled>Words</button>
+      <button type="button" class="chip" id="stage-words" aria-pressed="true" title="Show or hide words and syllables at each mouth" disabled>Words</button>
     </div>
     <div class="stage-song" id="stage-song" role="group" aria-label="Song transport"><span role="status">Loading songs…</span></div>
   </header>
@@ -58,7 +58,8 @@ async function loadStage(): Promise<void> {
   try {
     await initChimera();
     const { ChorusStage } = await import("./stage.ts");
-    const stage = new ChorusStage(stageElement, (words) => songs?.stageFrames(words) ?? []);
+    const stage = new ChorusStage(stageElement, (words) => songs?.stageFrames(words) ?? [],
+      wordsButton.getAttribute("aria-pressed") === "true");
     resetButton.onclick = () => {
       stage.reset();
       orbitButton.setAttribute("aria-pressed", "false");

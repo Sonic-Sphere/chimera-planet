@@ -1,4 +1,5 @@
 import { HEADS } from "../heads.ts";
+import { lionSong } from "./lion.ts";
 
 export interface Note {
   id: string;
@@ -6,6 +7,7 @@ export interface Note {
   duration: number;
   midi: number;
   lyric: string;
+  pronunciation?: string;
 }
 
 export type SongDraft = { tracks: Note[][]; bpm: number };
@@ -42,12 +44,6 @@ interface Tune {
 
 // Chromatic intervals from the tonic, with a beat length after ':'. r is a rest.
 const tunes: Tune[] = [
-  {
-    id: "lion", title: "The Lion Sleeps Tonight", kind: "Wordless refrain", bpm: 108, root: 60,
-    melody: "7:.5 4:.5 2:.5 4:2.5 | 7:.5 5:.5 4:.5 2:.5 0:2 | 2:.5 4:.5 2:.5 0:.5 4:1 2:1 | r:4 | 7:.5 4:.5 2:.5 4:2.5 | 7:.5 5:.5 4:.5 2:.5 0:2 | 2:.5 4:.5 2:.5 0:.5 2:1 0:1 | r:4",
-    lyrics: "doo ba da ah doo ba da ba oh da da doo ba ah oo doo ba da ah doo ba da ba oh da da doo ba ah oh",
-    chords: "I IV I V I IV V I", credit: "Based on Solomon Linda’s Mbube. This short arrangement uses vocal syllables.",
-  },
   {
     id: "twinkle", title: "Twinkle, Twinkle, Little Star", kind: "Lullaby", bpm: 92, root: 60,
     melody: "0 0 7 7 | 9 9 7:2 | 5 5 4 4 | 2 2 0:2 | 7 7 5 5 | 4 4 2:2 | 7 7 5 5 | 4 4 2:2 | 0 0 7 7 | 9 9 7:2 | 5 5 4 4 | 2 2 0:2",
@@ -196,7 +192,6 @@ function arrange(tune: Tune): Song {
     const root = tune.root + (degree > 5 ? degree - 12 : degree);
     const at = bar * 4;
     const last = bar === bars - 1;
-    const lion = tune.id === "lion";
     if (tune.id === "saints" && (bar === 1 || bar === 3)) {
       lead.slice(0, 4).forEach((note, index) => {
         tracks[3].push({ ...note, id: `answer-${bar}-${index}`, beat: at + note.beat, duration: 0.82 });
@@ -206,17 +201,17 @@ function arrange(tune: Tune): Song {
       add(2, at + 2, 0.7, root - 5, "dum");
       continue;
     }
-    const slow = tune.bpm < 95 && !lion;
+    const slow = tune.bpm < 95;
     const finalRoot = last ? tune.root : root;
-    if (!tune.canon && (bar > 0 || lion)) add(1, at + (slow ? 0 : 0.5), slow ? 3.5 : 3, finalRoot + (last ? 7 : third + 7), "oo");
-    add(2, at, slow || (lion && last) ? 3.65 : lion ? 0.85 : 1.55, finalRoot - 12, slow || (lion && last) ? "oh" : lion ? "moo" : "dum");
-    if (!slow && !last) add(2, at + 2, lion ? 0.88 : 1.35, root - (lion ? 12 : 5), lion ? "wah" : "dum");
-    if (!tune.canon && (bar % 2 === 1 || lion)) {
-      add(3, at + 2, slow ? 1.75 : 0.75, finalRoot + 7, lion ? "wah" : "ooh");
+    if (!tune.canon && bar > 0) add(1, at + (slow ? 0 : 0.5), slow ? 3.5 : 3, finalRoot + (last ? 7 : third + 7), "oo");
+    add(2, at, slow ? 3.65 : 1.55, finalRoot - 12, slow ? "oh" : "dum");
+    if (!slow && !last) add(2, at + 2, 1.35, root - 5, "dum");
+    if (!tune.canon && bar % 2 === 1) {
+      add(3, at + 2, slow ? 1.75 : 0.75, finalRoot + 7, "ooh");
       if (!slow) add(3, at + 3, 0.75, finalRoot + (last ? 0 : third), "doo");
     }
-    if (!slow && (bar > 0 || lion) && !last) {
-      for (const pulse of lion ? [0.5, 1.5, 2.5, 3.5] : [1, 3]) add(4, at + pulse, 0.45, root + third, lion ? "weh" : "ba");
+    if (!slow && bar > 0 && !last) {
+      for (const pulse of [1, 3]) add(4, at + pulse, 0.45, root + third, "ba");
     } else if (slow && bar % 2 === 1) add(4, at + 0.5, 2.75, finalRoot, "ah");
     if (bar > 0) add(5, at + 0.1, slow ? 3.6 : 2.25, finalRoot - (last ? 5 : 12 - third), "oo");
     if (!tune.canon && bar >= 2 && bar % 2 === 0) {
@@ -236,7 +231,7 @@ function arrange(tune: Tune): Song {
   return { id: tune.id, title: tune.title, kind: tune.kind, bpm: tune.bpm, bars, tracks, credit: tune.credit };
 }
 
-export const SONGBOOK = tunes.map(arrange);
+export const SONGBOOK = [lionSong(), ...tunes.map(arrange)];
 
 export function pitchName(midi: number): string {
   return `${["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][midi % 12]}${Math.floor(midi / 12) - 1}`;

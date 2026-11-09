@@ -1,13 +1,13 @@
 import workletUrl from "../../vendor/chimera/src/worklet/processor.ts?worker&url";
 import { chimeraModule } from "../../vendor/chimera/src/wasm/chimera.ts";
-import { beatReady, DEFAULT_SOURCE, EnglishG2P, lyricsToSyllables, NEUTRAL, planSong, planUtterance, tokenizeIpa } from "../../vendor/chimera/src/wasm/engine.ts";
+import { beatReady, DEFAULT_SOURCE, EnglishG2P, lyricsToSyllables, NEUTRAL, planSong } from "../../vendor/chimera/src/wasm/engine.ts";
 import type { BeatStep, Gesture, SungNote, Syllable, VoiceSource } from "../../vendor/chimera/src/wasm/types.ts";
 import type { FromWorklet, TelemetryMessage, ToWorklet } from "../../vendor/chimera/src/worklet/protocol.ts";
 import type { MouthWord } from "../../vendor/chimera/src/ui/mouthWords.ts";
 import { wordSpans, type WordSpan } from "../../vendor/chimera/src/ui/words.ts";
 import { HEADS, type HeadState } from "../heads.ts";
 import type { Note } from "./songbook.ts";
-import type { SongPerformance } from "./performance.ts";
+import { PREROLL, type SongPerformance } from "./performance.ts";
 
 export const BEAT_STEPS = 16;
 export type Pattern = (BeatStep | null)[][];
@@ -19,7 +19,6 @@ type TimedWord = WordSpan & { spoken?: true };
 export type StageWord = MouthWord & Pick<TimedWord, "spoken">;
 export type StageVoice = { tele: TelemetryMessage | null; word: StageWord | null };
 
-const PREROLL = 0.2; // Chimera's beat player also starts its first acoustic hit after 200 ms.
 const VOWELS: Record<string, string> = { ah: "ɑ", aa: "ɑ", ay: "eɪ", ee: "i", eh: "ɛ", oh: "oʊ", oo: "u", ooh: "u", uh: "ʌ" };
 const VOCABLES: Record<string, [string[], string, string[]]> = {
   ba: [["b"], "ɑ", []], da: [["d"], "ɑ", []], doo: [["d"], "u", []], dee: [["d"], "i", []],
@@ -30,6 +29,8 @@ const VOCABLES: Record<string, [string[], string, string[]]> = {
   gle: [["ɡ"], "ə", ["l"]], ful: [["f"], "ə", ["l"]], ly: [["l"], "i", []],
   ri: [["ɹ"], "ɪ", []], ers: [[], "ɚ", ["z"]], ner: [["n"], "ɚ", []], dy: [["d"], "i", []], dia: [["d"], "aɪ", []],
   wah: [["w"], "ɑ", []], moo: [["m"], "u", []], noh: [["n"], "oʊ", []],
+  wee: [["w"], "i", []], mm: [["m"], "ə", ["m"]],
+  lye: [["l"], "aɪ", []], uhn: [[], "ə", ["n"]], tuh: [["t"], "ə", []],
 };
 const dictionary = new EnglishG2P();
 export function warmDictionary(): void { void dictionary.load().catch(() => {}); }
@@ -111,14 +112,8 @@ function shapePhrase(phrase: PerformedNote[], body: HeadState["body"], bpm: numb
   return gestures;
 }
 
-function addSpeech(body: HeadState["body"], speech: NonNullable<SongPerformance["speech"]>, gestures: Gesture[], words: TimedWord[]): void {
-  let at = PREROLL;
-  for (const line of speech.lines) {
-    const segments = tokenizeIpa(line.ipa);
-    const plan = planUtterance(segments, {
-      body, t0: at, f0: line.pitch, rate: 0.92, accent: 0.13,
-      intonation: line.question ? "question" : "statement",
-    });
+function addSpeech(speech: NonNullable<SongPerformance["speech"]>, gestures: Gesture[], words: TimedWord[]): void {
+  for (const { text, segments, plan } of speech.lines) {
     const breath = plan.gestures.find((gesture) => gesture.targets.breath !== undefined)!;
     const points = [{ time: breath.t0, level: 0.86 }];
     for (const segment of plan.segments) {
@@ -127,8 +122,7 @@ function addSpeech(body: HeadState["body"], speech: NonNullable<SongPerformance[
     }
     points.push({ time: breath.t1, level: 0.72 });
     gestures.push(...plan.gestures.filter((gesture) => gesture !== breath), ...breathCurve(points));
-    words.push(...wordSpans([{ segments, words: line.text.split(/\s+/) }], plan).map((span) => ({ ...span, spoken: true as const })));
-    at = plan.end + 0.24;
+    words.push(...wordSpans([{ segments, words: text.split(/\s+/) }], plan).map((span) => ({ ...span, spoken: true as const })));
   }
 }
 
@@ -137,7 +131,7 @@ function voiceScore(notes: Note[], bpm: number, from: number, body: HeadState["b
   const speech = from === 0 && head === 0 ? performance?.speech : undefined;
   const gestures: Gesture[] = [];
   const words: TimedWord[] = [];
-  if (speech) addSpeech(body, speech, gestures, words);
+  if (speech) addSpeech(speech, gestures, words);
   let phrase: PerformedNote[] = [];
   const secondsPerBeat = 60 / bpm;
   const timeAt = (beat: number) => PREROLL + (performance
@@ -164,7 +158,7 @@ function voiceScore(notes: Note[], bpm: number, from: number, body: HeadState["b
       }
       flush();
     }
-    const syl = readSyllable(note.lyric) ?? readSyllable("ah")!;
+    const syl = readSyllable(note.pronunciation ?? note.lyric) ?? readSyllable("ah")!;
     const cents = performance ? [0, 3, -2, 5, -3, -4, 4, -5][head] : 0;
     phrase.push({ note, start, end, sung: {
       midi: note.midi + cents / 100, beats: (end - start) / secondsPerBeat,
@@ -276,6 +270,11 @@ export class EnsembleAudio {
   }
   get elapsed(): number { return this.audibleTime() - this.base; }
   get error(): Error | undefined { return this.failure; }
+
+  unlock(): void {
+    // A gesture can release the resume already pending from page load.
+    if (this.ctx?.state === "suspended") void this.ctx.resume().catch(() => {});
+  }
 
   setStageVisible(visible: boolean): void {
     if (this.stageVisible === visible) return;

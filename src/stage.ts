@@ -51,7 +51,6 @@ export class ChorusStage {
   private readonly gaze = { target: new THREE.Vector3(), weight: 0 };
   private pointerInside = false;
   private orbit = false;
-  private showWords = false;
   private interacting = false;
   private lastFrame = 0;
   private width = 0;
@@ -59,7 +58,8 @@ export class ChorusStage {
   private dpr = 1;
 
   constructor(private readonly element: HTMLElement,
-    private readonly performanceFrames: (showWords: boolean) => StageVoice[]) {
+    private readonly performanceFrames: (showWords: boolean) => StageVoice[],
+    private showWords: boolean) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setClearColor(0x000000, 1);
