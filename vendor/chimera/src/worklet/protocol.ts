@@ -14,6 +14,9 @@ export interface PhraseMsg {
 
 export type BodyName = "male" | "female" | "child";
 
+type Schedule = { type: "schedule"; gestures: Gesture[]; segments: PlannedSegment[]; end: number; id: number; replace: boolean; lead?: number };
+type Beat = { type: "beat"; steps?: (BeatStep | null)[]; bpm?: number; swing?: number; playing?: boolean };
+
 export type ToWorklet =
   | { type: "body"; body: BodyMix }
   | { type: "artic"; values: Partial<HumanArtic>; tipFree?: boolean }
@@ -21,7 +24,7 @@ export type ToWorklet =
   | { type: "gate"; level: number }
   | { type: "telemetry"; enabled: boolean }
   /** gestures planned on the main thread with times relative to "now" (the worklet adds its clock) */
-  | { type: "schedule"; gestures: Gesture[]; segments: PlannedSegment[]; end: number; id: number; replace: boolean; lead?: number }
+  | Schedule
   | { type: "stopSpeech" }
   /** switch the active voice: "human" or a creature id */
   | { type: "creature"; id: string; params?: Record<string, number> }
@@ -29,7 +32,10 @@ export type ToWorklet =
   | { type: "call"; id: string; pitch?: number; amp?: number }
   | { type: "stopCall" }
   /** beatbox sequencer: any subset of its state */
-  | { type: "beat"; steps?: (BeatStep | null)[]; bpm?: number; swing?: number; playing?: boolean }
+  | Beat
+  /** Ensemble voices share a context, so every head can start in the same render quantum. */
+  | { type: "ensembleStart"; frame: number; command: Schedule | Beat }
+  | { type: "ensembleStop" }
   /** end the open-ended gestures with this tag now (a sung note released) */
   | { type: "release"; tag: number }
   /** play one beatbox sound as soon as the mouth can make it */
@@ -37,6 +43,8 @@ export type ToWorklet =
 
 export interface TelemetryMessage {
   type: "telemetry";
+  /** Shared AudioContext frame at the end of the block, used by the ensemble stage. */
+  frame?: number;
   t: VoiceTelemetry;
   /** fraction of the render-quantum budget used by the engine (smoothed) */
   load: number;

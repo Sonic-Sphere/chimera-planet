@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "bongo-chimera",
+      "name": "chimera-planet",
       "dependencies": {
         "react": "19.3.1",
         "react-dom": "19.3.1",

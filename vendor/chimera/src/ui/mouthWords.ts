@@ -15,8 +15,14 @@ export interface MouthWord {
 /** how long a word takes to fly off (s) */
 const FADE = 0.45;
 
-export interface Trail {
-  entries: { word: MouthWord; left: number | null }[];
+export interface Trail<T extends MouthWord = MouthWord> {
+  entries: { word: T; left: number | null }[];
+}
+
+export function mouthWordFade(left: number | null, clock: number) {
+  const age = left === null ? 0 : clock - left;
+  const u = Math.min(1, age / FADE);
+  return { age, scale: 1 - 0.55 * u, alpha: left === null ? 1 : 0.75 * (1 - u) ** 1.5 };
 }
 
 /**
@@ -24,7 +30,7 @@ export interface Trail {
  * last one off; the same key coming back while its entry is still flying off brings it back
  * (a brief gap in what is being said is not a new word).
  */
-export function advanceTrail(t: Trail, word: MouthWord | null, clock: number): void {
+export function advanceTrail<T extends MouthWord>(t: Trail<T>, word: T | null, clock: number): void {
   const e = t.entries;
   const top = e[e.length - 1];
   if (top && word && top.word.key === word.key) top.left = null;
@@ -60,16 +66,14 @@ export function mouthWords(now: () => MouthWord | null, color: string, side: 1 |
     const base = Math.max(26, Math.min(64, r.pxPerCm * 1.7));
     const by = Math.min(h - 14, ly + r.pxPerCm * 18);
     for (const { word: wd, left } of trail) {
-      const age = left === null ? 0 : clock - left;
-      const u = Math.min(1, age / FADE);
+      const { age, scale, alpha } = mouthWordFade(left, clock);
       const text = wd.text.toUpperCase();
       ctx.font = hfont(base, "m");
       const wide = ctx.measureText(text).width * 1.08;
-      const size = (wide > room ? (base * room) / wide : base) * (1 - 0.55 * u);
-      const alpha = left === null ? 1 : 0.75 * (1 - u) ** 1.5;
+      const size = (wide > room ? (base * room) / wide : base) * scale;
       const o = { size, color, weight: "m" as const, ls: 0.05, alpha, moving: left !== null };
       if (below) {
-        const half = (Math.min(wide, room) * (1 - 0.55 * u)) / 2;
+        const half = Math.min(wide, room) * scale / 2;
         label(ctx, text, Math.min(w - 8 - half, Math.max(8 + half, lx)), by + age * 120, { ...o, align: "center" });
       } else label(ctx, text, x0 + side * age * 240, ly + size * 0.36 - age * 200, { ...o, align: side > 0 ? "left" : "right" });
     }

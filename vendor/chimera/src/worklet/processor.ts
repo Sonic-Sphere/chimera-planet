@@ -12,6 +12,7 @@ import type { BodyMix, CreatureTelemetry } from "../wasm/types.ts";
 
 // Minimal AudioWorkletGlobalScope typings
 declare const sampleRate: number;
+declare const currentFrame: number;
 declare function registerProcessor(name: string, ctor: unknown): void;
 declare class AudioWorkletProcessor {
   readonly port: MessagePort;
@@ -45,9 +46,15 @@ class ChimeraProcessor extends AudioWorkletProcessor {
   private blocks = 0;
   private load = 0;
   private creature: CreatureInfo | null = null;
+  private readonly ensemble: boolean;
+  private idle: boolean;
+  private queued: Extract<ToWorklet, { type: "ensembleStart" }> | null = null;
 
-  constructor(options: { processorOptions: { module: WebAssembly.Module } }) {
+  constructor(options: { processorOptions: { module: WebAssembly.Module; ensemble?: boolean } }) {
     super();
+    this.ensemble = options.processorOptions.ensemble === true;
+    this.idle = this.ensemble;
+    this.telemetryOn = !this.idle;
     this.x = new WebAssembly.Instance(options.processorOptions.module, {}).exports as unknown as Exports;
     this.h = this.x.engine_new(sampleRate);
     this.port.onmessage = (e: MessageEvent<ToWorklet>) => {
@@ -105,6 +112,15 @@ class ChimeraProcessor extends AudioWorkletProcessor {
   private handle(m: ToWorklet): void {
     const x = this.x, h = this.h;
     switch (m.type) {
+      case "ensembleStart":
+        this.queued = m;
+        break;
+      case "ensembleStop":
+        this.queued = null;
+        this.idle = true;
+        x.engine_set_beat(h, 0, 0, NaN, NaN, 0);
+        x.engine_stop_speech(h);
+        break;
       case "body":
         x.engine_set_body(h, m.body.female, m.body.child);
         this.postReady();
@@ -147,6 +163,10 @@ class ChimeraProcessor extends AudioWorkletProcessor {
         x.engine_release(h, m.tag);
         break;
       case "beat": {
+        if (this.queued?.command.type === "beat") {
+          this.queued.command = { ...this.queued.command, ...m };
+          break;
+        }
         const n = m.steps ? writeSteps(this.mem, x.engine_records(h), m.steps) : 0;
         x.engine_set_beat(h, m.steps ? 1 : 0, n, m.bpm ?? NaN, m.swing ?? NaN, m.playing === undefined ? 2 : m.playing ? 1 : 0);
         break;
@@ -183,12 +203,18 @@ class ChimeraProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     if (!out || out.length === 0) return true;
     const ch0 = out[0];
-    if (this.failed) {
+    if (this.failed || (this.idle && (!this.queued || this.queued.frame > currentFrame))) {
       for (const ch of out) ch.fill(0);
       return true;
     }
     const t0 = Date.now();
     try {
+      if (this.queued && currentFrame >= this.queued.frame) {
+        const { command } = this.queued;
+        this.queued = null;
+        this.handle(command);
+        this.idle = false;
+      }
       const p = this.x.engine_render(this.h, ch0.length);
       ch0.set(new Float32Array(this.mem, p, ch0.length));
     } catch (err) {
@@ -202,7 +228,7 @@ class ChimeraProcessor extends AudioWorkletProcessor {
     if (this.telemetryOn && !this.failed && ++this.blocks % 6 === 0) {
       try {
         if (this.creature) this.post({ type: "ctelemetry", t: this.creatureTelemetry(this.creature), load: this.load });
-        else this.post(this.humanTelemetry());
+        else this.post(this.humanTelemetry(this.ensemble ? currentFrame + ch0.length : undefined));
       } catch (err) {
         this.fail(err);
       }
@@ -211,7 +237,7 @@ class ChimeraProcessor extends AudioWorkletProcessor {
   }
 
   /** The human voice's telemetry block → the message the UI reads. */
-  private humanTelemetry(): TelemetryMessage {
+  private humanTelemetry(frame?: number): TelemetryMessage {
     const x = this.x, h = this.h;
     const p = x.engine_telemetry(h);
     const [phLen, orLen, velumPort, f0, voicing, pLung, outRms, noiseLevel, noiseNode, gate, clock, nArtic, nPh, nOr, nScope, nActive] = new Float64Array(this.mem, p, TELE_HEADER);
@@ -224,6 +250,7 @@ class ChimeraProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < nActive; i++) active.push(fromUtf8(labels.subarray(i * 25 + 1, i * 25 + 1 + labels[i * 25])));
     return {
       type: "telemetry",
+      frame,
       t: { artic, phAreas, orAreas, phLen, orLen, pressureRms, flow, velumPort, glottalArea, glottalFlow, f0, voicing, pLung, outRms, noiseLevel, noiseNode, gate, clock, active },
       load: this.load,
       body: this.body(),

@@ -74,15 +74,19 @@ impl HumanAirway {
         // node counts from the shortest expected lengths (larynx raised, lips retracted)
         let ph_min_len = 8.7 * k * (0.55 + 0.45 * body.pharynx) - 1.6 * k;
         let or_min_len = 8.3 * k - 1.0 * k;
-        let n_ph = (8.0f64).max((ph_min_len / dx_min).floor()) as usize;
-        let n_or = (8.0f64).max((or_min_len / dx_min).floor()) as usize;
+        // The normal voice grid keeps at least eight cells. At ensemble rates that
+        // floor would put short tracts below dx_min and make the pressure solver unstable.
+        let compact_grid = fs < 56_000.0;
+        let cell_floor = if compact_grid { 3.0f64 } else { 8.0f64 };
+        let n_ph = cell_floor.max((ph_min_len / dx_min).floor()) as usize;
+        let n_or = cell_floor.max((or_min_len / dx_min).floor()) as usize;
 
         let tr_len = 12.0 * k;
         let trachea = net.add_tube(TubeSpec::new("trachea", js_max(6.0, (tr_len / js_max(dx_min, 0.9 * k)).floor()) as usize, tr_len, Area::Uniform(2.5 * k * k)).wall(Some(WALL_TRACHEA)));
         let pharynx = net.add_tube(TubeSpec::new("pharynx", n_ph, 8.8 * k, Area::Uniform(3.0 * k * k)).wall(Some(WALL_SOFT)).radiating(0.25).perimeter(1.25));
         let oral = net.add_tube(TubeSpec::new("oral", n_or, 8.3 * k, Area::Uniform(3.0 * k * k)).wall(Some(WALL_SOFT)).radiating(0.25).perimeter(1.5));
         let na_len = 11.4 * k;
-        let n_na = js_max(8.0, (na_len / js_max(dx_min, 0.5 * k)).floor()) as usize;
+        let n_na = js_max(cell_floor, (na_len / js_max(dx_min, 0.5 * k)).floor()) as usize;
         let na_areas: Vec<f64> = (0..n_na)
             .map(|i| {
                 let u = (i as f64 + 0.5) / n_na as f64;
@@ -99,7 +103,9 @@ impl HumanAirway {
             })
             .collect();
         let nasal = net.add_tube(TubeSpec::new("nasal", n_na, na_len, Area::Profile(na_areas)).wall(Some(WALL_NASAL)).perimeter(3.2).viscous(2.5));
-        let fossa = net.add_tube(TubeSpec::new("piriform", 3, 2.0 * k, Area::Uniform(0.9 * k * k)).wall(Some(WALL_SOFT)).perimeter(1.3));
+        let fossa_len = 2.0 * k;
+        let n_fossa = if compact_grid { (fossa_len / dx_min).floor().clamp(1.0, 3.0) as usize } else { 3 };
+        let fossa = net.add_tube(TubeSpec::new("piriform", n_fossa, fossa_len, Area::Uniform(0.9 * k * k)).wall(Some(WALL_SOFT)).perimeter(1.3));
 
         let lungs = net.add_pressure_node("lungs");
         let tr_a = 2.5 * k * k;

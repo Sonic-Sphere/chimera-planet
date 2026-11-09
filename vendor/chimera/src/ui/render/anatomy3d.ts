@@ -755,8 +755,17 @@ export class Anatomy3D {
     };
   }
 
+  /** The animated lips and their outward direction in the containing scene. */
+  mouthPose(model: VoiceModel, f: HumanFrame, a: HumanArtic, position: THREE.Vector3, forward: THREE.Vector3): void {
+    const lips = faceHandles(model, f, a).find((handle) => handle.id === "lips")!.pos;
+    const world = this.beams.group.matrixWorld;
+    position.set(lips.x, lips.y, 0).applyMatrix4(world);
+    forward.set(1, 0, 0).transformDirection(world);
+  }
+
   // ------------------------------------------------------------------ one frame
-  update(model: VoiceModel, f: HumanFrame, a: HumanArtic, tele: TelemetryMessage | null, view: ViewFlags, dt: number): void {
+  update(model: VoiceModel, f: HumanFrame, a: HumanArtic, tele: TelemetryMessage | null, view: ViewFlags, dt: number,
+    gazeTarget?: { target: THREE.Vector3; weight: number }): void {
     this.clock += dt;
     const rest = this.restFor(model);
     const k = model.tract.scale;
@@ -829,7 +838,7 @@ export class Anatomy3D {
     line(f.inner, V.blue, 1.3, { alpha: 0.9 });
     line(G.glottisWall, V.blue, 1.2, { alpha: 0.8 });
 
-    this.eyes(rest, dt);
+    this.eyes(rest, dt, gazeTarget);
     this.airway(model, f, tele, view, k);
     this.velum(f, k);
     this.epiglottis(f, k, artCut);
@@ -906,13 +915,24 @@ export class Anatomy3D {
   }
 
   // ------------------------------------------------------------------ eyes
-  private eyes(rest: Rest, dt: number): void {
+  private eyes(rest: Rest, dt: number, gazeTarget?: { target: THREE.Vector3; weight: number }): void {
     const g = this.gaze, e = this.face;
     g.update(this.clock, dt);
     const r = rest.eyeR;
     // where they look: forward, turned by the gaze (yaw towards +z, pitch up)
-    const pitch = g.pitch + 1.3 * e.lookUp;
-    const d: V3 = [Math.cos(pitch) * Math.cos(g.yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(g.yaw)];
+    let pitch = g.pitch + 1.3 * e.lookUp;
+    let yaw = g.yaw;
+    if (gazeTarget) {
+      const aim = this.beams.group.worldToLocal(this.v3.copy(gazeTarget.target));
+      const x = aim.x - rest.eyes[0][0];
+      const y = aim.y - rest.eyes[0][1];
+      const z = aim.z; // The midpoint between the eyes is on the midline.
+      const targetYaw = THREE.MathUtils.clamp(Math.atan2(z, x), -1.15, 1.15);
+      const targetPitch = THREE.MathUtils.clamp(Math.atan2(y, Math.hypot(x, z)), -0.65, 0.65);
+      yaw = THREE.MathUtils.lerp(yaw, targetYaw, gazeTarget.weight);
+      pitch = THREE.MathUtils.lerp(pitch, targetPitch, gazeTarget.weight);
+    }
+    const d: V3 = [Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw)];
     const basis = (n: V3): [V3, V3] => {
       const up: V3 = Math.abs(n[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
       const u = norm3(cross(up, n));

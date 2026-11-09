@@ -7,20 +7,28 @@
 import { describe, expect, test } from "bun:test";
 import { wasmModule } from "./harness.ts";
 import { fromUtf8 } from "../src/wasm/wire.ts";
+import type { ToWorklet } from "../src/worklet/protocol.ts";
+
+type Proc = { port: { onmessage: ((e: { data: unknown }) => void) | null }; process: (i: unknown, o: Float32Array[][]) => boolean };
+let processor: (new (o: unknown) => Proc) | null = null;
+
+async function loadProcessor(post: (m: { type: string; body?: unknown; message?: string }) => void) {
+  const g = globalThis as Record<string, unknown>;
+  g.sampleRate = 48000;
+  g.currentFrame = 0;
+  g.AudioWorkletProcessor = class {
+    port = { onmessage: null as unknown, postMessage: post };
+  };
+  g.registerProcessor = (_name: string, ctor: typeof processor) => (processor = ctor);
+  await import("../src/worklet/processor.ts");
+  return processor!;
+}
 
 describe("worklet ordering", () => {
   test("a note scheduled right after a body change plays on the new voice; a stop cancels what came before it", async () => {
-    type Proc = { port: { onmessage: ((e: { data: unknown }) => void) | null }; process: (i: unknown, o: Float32Array[][]) => boolean };
-    let Ctor: (new (o: unknown) => Proc) | null = null;
     const posted: { type: string; body?: unknown; message?: string }[] = [];
-    const g = globalThis as Record<string, unknown>;
-    g.sampleRate = 48000;
-    g.AudioWorkletProcessor = class {
-      port = { onmessage: null as unknown, postMessage: (m: { type: string }) => posted.push(m) };
-    };
-    g.registerProcessor = (_name: string, ctor: typeof Ctor) => (Ctor = ctor);
-    await import("../src/worklet/processor.ts");
-    const p = new Ctor!({ processorOptions: { module: wasmModule } });
+    const Ctor = await loadProcessor((m) => posted.push(m));
+    const p = new Ctor({ processorOptions: { module: wasmModule } });
     const send = (data: unknown) => p.port.onmessage!({ data });
     const block = () => p.process([], [[new Float32Array(128)]]);
     // the processor's engine, for inspection
@@ -59,6 +67,37 @@ describe("worklet ordering", () => {
     block();
     expect(scoreSize()).toBe(0);
     expect(posted.filter((m) => m.type === "error")).toEqual([]);
+  });
+
+  test("ensemble heads enter on the same render frame and a cancelled entry stays silent", async () => {
+    const Ctor = await loadProcessor(() => {});
+    const heads = Array.from({ length: 3 }, () => new Ctor({ processorOptions: { module: wasmModule, ensemble: true } }));
+    const send = (head: Proc, data: ToWorklet) => head.port.onmessage!({ data });
+    const start = {
+      type: "ensembleStart", frame: 1024,
+      command: { type: "beat", steps: [{ id: "B" }], bpm: 96, playing: true },
+    } satisfies ToWorklet;
+    const firstSound = heads.map(() => -1);
+    const out = new Float32Array(128);
+    for (let frame = 0; frame < 20000; frame += 128) {
+      (globalThis as Record<string, unknown>).currentFrame = frame;
+      if (frame === 0) send(heads[0], start);
+      if (frame === 128) {
+        send(heads[1], { ...start, command: { ...start.command, steps: [null] } });
+        send(heads[2], start);
+      }
+      if (frame === 256) {
+        send(heads[1], { type: "beat", steps: [{ id: "B" }] });
+        send(heads[2], { type: "ensembleStop" });
+      }
+      heads.forEach((head, i) => {
+        head.process([], [[out]]);
+        if (firstSound[i] < 0 && out.some((value) => Math.abs(value) > 0.003)) firstSound[i] = frame;
+      });
+    }
+    expect(firstSound[0]).toBeGreaterThan(start.frame);
+    expect(firstSound[1]).toBe(firstSound[0]);
+    expect(firstSound[2]).toBe(-1);
   });
 });
 

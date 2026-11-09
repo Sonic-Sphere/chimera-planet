@@ -2,12 +2,48 @@
 //! through `Engine`, and output independent of the host's block size with the sequencer playing,
 //! a body switch, schedules and releases at fixed absolute sample positions.
 mod common;
-use chimera::anatomy::human::{ArticKey, ArticPatch, BodyName};
+use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix, BodyName};
 use chimera::control::score::{Gesture, Targets};
 use chimera::engine::Engine;
 use chimera::phonetics::beatbox::{BeatStep, beat_ready, parse_beat};
+use chimera::phonetics::sing::{SongOptions, SungNote, plan_song};
+use chimera::phonetics::{Segment, Syllable};
 use chimera::voice::human_voice::SourcePatch;
 use common::*;
+
+#[test]
+fn ensemble_rate_stays_finite_with_short_vocal_tracts() {
+    let mut out = vec![0.0; 48_000];
+    for body in [BodyMix::MALE, BodyMix::FEMALE, BodyMix::CHILD] {
+        let mut e = Engine::new(16_000.0);
+        e.set_body(body);
+        let notes: Vec<_> = ["u", "ɑ", "ɛ", "i"].into_iter().zip([55.0, 67.0, 62.0, 76.0]).map(|(ipa, midi)| SungNote {
+            midi,
+            beats: 1.0,
+            syl: Syllable {
+                text: ipa.into(),
+                onset: vec![Segment { ipa: "d".into(), ..Segment::default() }],
+                nucleus: Segment { ipa: ipa.into(), ..Segment::default() },
+                coda: vec![],
+                melisma: None,
+                word_end: true,
+                phrase_end: false,
+            },
+        }).collect();
+        let score = plan_song(&notes, &SongOptions { body, bpm: 108.0, t0: 0.2, vibrato: 26.0 });
+        e.schedule(&score.gestures, 0.0, true);
+        e.render(&mut out);
+        assert!(out.iter().all(|x| x.is_finite()), "singing with {body:?}");
+        assert!(out.iter().any(|x| x.abs() > 0.02));
+        e.stop_speech();
+        e.set_artic(&beat_ready(body), None);
+        e.set_beat_steps(&parse_beat("B t Pf tss | K P! ^K m:43"));
+        e.set_beat_playing(true);
+        e.render(&mut out);
+        assert!(out.iter().all(|x| x.is_finite()), "beatboxing with {body:?}");
+        assert!(out.iter().any(|x| x.abs() > 0.02));
+    }
+}
 
 #[test]
 fn engine_plays_the_beatbox_bar_like_the_typescript_worklet() {
