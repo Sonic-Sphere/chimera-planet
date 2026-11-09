@@ -1,0 +1,25 @@
+{
+  "name": "bongo-chorus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5427 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5427 --strictPort",
+    "test": "tsx --test tests/*.test.ts",
+    "verify:assets": "python3 scripts/verify-assets.py",
+    "qa": "node scripts/browser-qa.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/core": "2.1.1",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "@types/three": "0.180.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vite": "7.1.9"
+  }
+}
