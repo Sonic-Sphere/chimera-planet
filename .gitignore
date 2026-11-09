@@ -1,13 +1,3 @@
 node_modules/
 dist/
-public/local-assets/
-evidence/reference/originals/
-evidence/reference/*.js
 .DS_Store
-*.log
-evidence/stage-0/recovered-functions.js
-evidence/acceptance/*.png
-evidence/acceptance/*.wav
-
-# Separate source checkout for the explicitly requested public Site.
-site/
