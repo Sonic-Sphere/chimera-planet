@@ -46,6 +46,10 @@ body {
   white-space: nowrap;
 }
 
+.stage-controls {
+  display: contents;
+}
+
 .chorus-panel {
   flex: 1 1 0;
   min-height: 360px;
@@ -136,17 +140,112 @@ body {
   font-weight: 500;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-width: 1000px) and (max-height: 500px) and (orientation: landscape) {
   #app {
-    padding-inline: 8px;
+    display: grid;
+    grid-template:
+      "title" auto
+      "stage" minmax(220px, 1fr)
+      "controls" auto
+      / minmax(0, 1fr);
+    reading-flow: grid-rows;
+    gap: 8px;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+      8px max(10px, env(safe-area-inset-left));
+  }
+
+  .bongo-bar {
+    display: contents;
   }
 
   .bongo-bar .wordmark {
-    font-size: 22px;
+    grid-area: title;
+    padding-block: 3px;
+    font-size: clamp(16px, 5vw, 20px);
+    letter-spacing: 0.25em;
+    text-align: center;
+  }
+
+  .chorus-panel {
+    grid-area: stage;
+    min-height: 0;
+  }
+
+  .chorus-viewport > canvas {
+    position: absolute;
+    inset: 0;
+  }
+
+  .stage-controls {
+    grid-area: controls;
+    display: grid;
+    reading-flow: grid-rows;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--frame);
+    background: #070e14;
   }
 
   .stage-song {
-    flex-basis: 100%;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 84px;
+    min-height: 44px;
   }
 
+  .stage-song select {
+    width: 100%;
+    min-height: 44px;
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .stage-song .stage-song-play,
+  .stage-view-tools .chip {
+    min-height: 44px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .stage-song > [role="status"],
+  .stage-song-error {
+    grid-column: 1 / -1;
+  }
+
+  .stage-view-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stage-view-tools .chip {
+    padding-inline: 4px;
+  }
+
+  .site-credits {
+    gap: 3px 14px;
+    padding: 0 max(10px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  @media (orientation: landscape) and (max-height: 500px) {
+    #app {
+      grid-template:
+        "stage ." 1fr
+        "stage title" auto
+        "stage controls" auto
+        "stage ." 1fr
+        / minmax(0, 1fr) clamp(200px, 31vw, 270px);
+    }
+
+    .stage-song {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .stage-song .stage-song-play {
+      width: 100%;
+    }
+  }
 }

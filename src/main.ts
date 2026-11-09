@@ -7,12 +7,14 @@ const app = document.querySelector<HTMLElement>("#app")!;
 app.innerHTML = `
   <header class="bongo-bar">
     <h1 class="wordmark">Chimera Planet</h1>
-    <div class="stage-view-tools" role="group" aria-label="View controls">
-      <button type="button" class="chip" id="reset-view" disabled>Reset view</button>
-      <button type="button" class="chip" id="slow-orbit" aria-pressed="false" disabled>Slow orbit</button>
-      <button type="button" class="chip" id="stage-words" aria-pressed="true" title="Show or hide words and syllables at each mouth" disabled>Words</button>
+    <div class="stage-controls">
+      <div class="stage-view-tools" role="group" aria-label="View controls">
+        <button type="button" class="chip" id="reset-view" disabled>Reset view</button>
+        <button type="button" class="chip" id="slow-orbit" aria-pressed="false" disabled>Slow orbit</button>
+        <button type="button" class="chip" id="stage-words" aria-pressed="true" title="Show or hide words and syllables at each mouth" disabled>Words</button>
+      </div>
+      <div class="stage-song" id="stage-song" role="group" aria-label="Song transport"><span role="status">Loading songs…</span></div>
     </div>
-    <div class="stage-song" id="stage-song" role="group" aria-label="Song transport"><span role="status">Loading songs…</span></div>
   </header>
   <section class="chorus-panel screen focus" aria-label="Ensemble">
     <div class="chorus-viewport" id="chorus-stage">
